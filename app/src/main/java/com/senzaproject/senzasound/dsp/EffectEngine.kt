@@ -20,6 +20,7 @@ import kotlin.math.max
 object EffectEngine {
     data class Status(
         val sessions: List<Int> = emptyList(),
+        val native: Boolean = false,
         val dynamics: Boolean = false,
         val legacyEq: Boolean = false,
         val bass: Boolean = false,
@@ -80,6 +81,7 @@ object EffectEngine {
         val list = sessions.values.toList()
         _status.value = Status(
             sessions = sessions.keys.toList(),
+            native = list.any { it.hasNative },
             dynamics = list.any { it.hasDynamics },
             legacyEq = list.any { it.hasLegacyEq },
             bass = list.any { it.hasBass },
@@ -91,6 +93,7 @@ object EffectEngine {
 }
 
 private class SessionFx(val session: Int) {
+    private var nat: NativeFx? = null
     private var dp: DynamicsProcessing? = null
     private var eq: Equalizer? = null
     private var bass: BassBoost? = null
@@ -98,6 +101,7 @@ private class SessionFx(val session: Int) {
     private var loud: LoudnessEnhancer? = null
     val errors = mutableListOf<String>()
 
+    val hasNative get() = nat != null
     val hasDynamics get() = dp != null
     val hasLegacyEq get() = eq != null
     val hasBass get() = bass != null
@@ -105,6 +109,12 @@ private class SessionFx(val session: Int) {
     val hasLoudness get() = loud != null
 
     init {
+        // Pustaka native (vendor) lebih diutamakan; bila ada, mesin Java tidak dipasang.
+        nat = NativeFx.create(session)
+        if (nat == null) initJavaChain()
+    }
+
+    private fun initJavaChain() {
         try {
             dp = buildDynamics()
         } catch (t: Throwable) {
@@ -138,6 +148,15 @@ private class SessionFx(val session: Int) {
         val on = app.enabled
         val s = app.current
         val gains = EqMath.effectiveGains(s)
+
+        nat?.let { n ->
+            try {
+                n.apply(on, gains, s.spatial, s.leveler, s.loudness * 8f, if (s.safeVolume) -12f else -1f)
+            } catch (t: Throwable) {
+                errors += "Gagal menerapkan efek native: ${t.message}"
+            }
+            return
+        }
 
         dp?.let { d ->
             try {
@@ -225,6 +244,8 @@ private class SessionFx(val session: Int) {
     }
 
     fun release() {
+        nat?.release()
+        nat = null
         try { dp?.release() } catch (t: Throwable) { }
         try { eq?.release() } catch (t: Throwable) { }
         try { bass?.release() } catch (t: Throwable) { }

@@ -47,6 +47,7 @@ fun InfoScreen(vm: SoundViewModel, padding: PaddingValues) {
 
         GlassCard {
             SectionTitle("Mesin efek", "Sesi terpasang: ${if (st.sessions.isEmpty()) "belum ada" else st.sessions.joinToString()}")
+            StatusRow("Efek native Senza (vendor)", st.native)
             StatusRow("EQ 10 band + kompresor (DynamicsProcessing)", st.dynamics)
             StatusRow("EQ cadangan (Equalizer bawaan)", st.legacyEq)
             StatusRow("Bass enhancer", st.bass)
