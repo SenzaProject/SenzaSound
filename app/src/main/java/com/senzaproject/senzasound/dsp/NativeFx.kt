@@ -7,7 +7,8 @@ import java.util.UUID
 
 /**
  * Jembatan ke pustaka efek native libsenzafx.so (jika terpasang di vendor).
- * Bila pustaka tidak ada, create() mengembalikan null dan mesin Java dipakai.
+ * Konstruktor AudioEffect(type, uuid, ...) disembunyikan dari SDK publik, jadi dipanggil lewat refleksi.
+ * Bila pustaka tidak ada atau Android menolak refleksi, create() mengembalikan null dan mesin Java dipakai.
  */
 class NativeFx private constructor(private val fx: AudioEffect) {
     companion object {
@@ -22,14 +23,16 @@ class NativeFx private constructor(private val fx: AudioEffect) {
         private const val K_LIMITER = 6
 
         fun create(session: Int): NativeFx? = try {
-            NativeFx(AudioEffect(TYPE, IMPL, 0, session))
+            val ctor = AudioEffect::class.java.getDeclaredConstructor(
+                UUID::class.java, UUID::class.java, Integer.TYPE, Integer.TYPE,
+            )
+            ctor.isAccessible = true
+            val effect = ctor.newInstance(TYPE, IMPL, 0, session) as AudioEffect
+            NativeFx(effect)
         } catch (t: Throwable) {
             null
         }
     }
-
-    private fun key(k: Int): ByteArray =
-        ByteBuffer.allocate(4).order(ByteOrder.nativeOrder()).putInt(k).array()
 
     private fun floats(v: FloatArray): ByteArray {
         val b = ByteBuffer.allocate(4 * v.size).order(ByteOrder.nativeOrder())
@@ -37,7 +40,9 @@ class NativeFx private constructor(private val fx: AudioEffect) {
         return b.array()
     }
 
-    private fun int(v: Int): ByteArray = key(v)
+    private fun send(key: Int, value: ByteArray) {
+        fx.setParameter(intArrayOf(key), value)
+    }
 
     fun apply(
         on: Boolean,
@@ -47,12 +52,12 @@ class NativeFx private constructor(private val fx: AudioEffect) {
         loudnessDb: Float,
         limiterDb: Float,
     ) {
-        fx.setParameter(key(K_EQ), floats(gainsDb))
-        fx.setParameter(key(K_SPATIAL), floats(floatArrayOf(spatial)))
-        fx.setParameter(key(K_LEVELER), floats(floatArrayOf(leveler)))
-        fx.setParameter(key(K_LOUDNESS), floats(floatArrayOf(loudnessDb)))
-        fx.setParameter(key(K_LIMITER), floats(floatArrayOf(limiterDb)))
-        fx.setParameter(key(K_ENABLE), int(if (on) 1 else 0))
+        send(K_EQ, floats(gainsDb))
+        send(K_SPATIAL, floats(floatArrayOf(spatial)))
+        send(K_LEVELER, floats(floatArrayOf(leveler)))
+        send(K_LOUDNESS, floats(floatArrayOf(loudnessDb)))
+        send(K_LIMITER, floats(floatArrayOf(limiterDb)))
+        send(K_ENABLE, ByteBuffer.allocate(4).order(ByteOrder.nativeOrder()).putInt(if (on) 1 else 0).array())
         fx.setEnabled(true)
     }
 
