@@ -7,10 +7,14 @@ import java.util.UUID
 
 /**
  * Jembatan ke pustaka efek native libsenzafx.so (jika terpasang di vendor).
- * Konstruktor AudioEffect(type, uuid, ...) disembunyikan dari SDK publik, jadi dipanggil lewat refleksi.
+ * Konstruktor AudioEffect(type, uuid, ...) tersembunyi dan setParameter() berstatus protected,
+ * jadi keduanya dipanggil lewat refleksi.
  * Bila pustaka tidak ada atau Android menolak refleksi, create() mengembalikan null dan mesin Java dipakai.
  */
-class NativeFx private constructor(private val fx: AudioEffect) {
+class NativeFx private constructor(
+    private val fx: AudioEffect,
+    private val setParam: java.lang.reflect.Method,
+) {
     companion object {
         val TYPE: UUID = UUID.fromString("634b1d63-68d0-4951-9fde-bbd2bf82af18")
         val IMPL: UUID = UUID.fromString("861f6b79-b150-4566-9994-c2a58291efa1")
@@ -27,8 +31,12 @@ class NativeFx private constructor(private val fx: AudioEffect) {
                 UUID::class.java, UUID::class.java, Integer.TYPE, Integer.TYPE,
             )
             ctor.isAccessible = true
+            val method = AudioEffect::class.java.getDeclaredMethod(
+                "setParameter", IntArray::class.java, ByteArray::class.java,
+            )
+            method.isAccessible = true
             val effect = ctor.newInstance(TYPE, IMPL, 0, session) as AudioEffect
-            NativeFx(effect)
+            NativeFx(effect, method)
         } catch (t: Throwable) {
             null
         }
@@ -41,7 +49,7 @@ class NativeFx private constructor(private val fx: AudioEffect) {
     }
 
     private fun send(key: Int, value: ByteArray) {
-        fx.setParameter(intArrayOf(key), value)
+        setParam.invoke(fx, intArrayOf(key), value)
     }
 
     fun apply(
