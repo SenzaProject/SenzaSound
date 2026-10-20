@@ -1,10 +1,10 @@
 # Senza Sound
 
 Aplikasi equalizer & audio spasial untuk Android (Kotlin + Jetpack Compose), minimal Android 9 (API 28).
-Bukan produk Dolby; memakai efek audio Android sendiri (`android.media.audiofx`).
+Mesin audio buatan SenzaProject: EQ 32 band, efek spasial, kompresor dinamis, dan limiter.
 
 ## Fitur
-- Equalizer 10 band (31 Hz–16 kHz, ±12 dB) dengan grafik respons frekuensi, 13 preset + preset buatan sendiri
+- Equalizer 32 band (20 Hz–20 kHz, ±12 dB) dengan grafik respons frekuensi, 15 preset + preset buatan sendiri
 - Profil: Film, Musik, Game, Suara, Kustom (masing-masing menyimpan pengaturannya)
 - Surround virtualizer (mode binaural untuk headphone, transaural untuk speaker – otomatis)
 - Penguat dialog, bass enhancer, Intelligent EQ (Seimbang/Detail/Hangat + intensitas)

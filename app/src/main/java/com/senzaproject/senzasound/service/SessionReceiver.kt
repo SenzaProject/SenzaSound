@@ -7,7 +7,7 @@ import android.media.audiofx.AudioEffect
 import com.senzaproject.senzasound.data.AppRepo
 import com.senzaproject.senzasound.dsp.EffectEngine
 
-/** Menerima pengumuman sesi audio dari aplikasi pemutar (Spotify, YouTube Music, VLC, dll). */
+/** Menerima pengumuman sesi audio dari aplikasi pemutar musik dan video. */
 class SessionReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         AppRepo.init(context)

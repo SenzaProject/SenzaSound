@@ -22,6 +22,7 @@ import com.senzaproject.senzasound.dsp.PlayerController
 import com.senzaproject.senzasound.dsp.SpectrumAnalyzer
 import com.senzaproject.senzasound.dsp.ToneGenerator
 import com.senzaproject.senzasound.service.EffectService
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -30,6 +31,7 @@ import kotlinx.coroutines.launch
 class SoundViewModel(private val app: Application) : AndroidViewModel(app) {
     val state: StateFlow<AppState> = AppRepo.state
     val engine = EffectEngine.status
+    val caps = EffectEngine.caps
     val player = PlayerController(app)
     val analyzer = SpectrumAnalyzer()
     val tone = ToneGenerator()
@@ -47,6 +49,9 @@ class SoundViewModel(private val app: Application) : AndroidViewModel(app) {
         AppRepo.init(app)
         refreshEndpoint()
         audioManager.registerAudioDeviceCallback(deviceCallback, null)
+        // Pasang efek global langsung dari proses aplikasi, lalu uji kemampuan perangkat di thread latar.
+        try { EffectEngine.attach(0, AppRepo.state.value) } catch (t: Throwable) { }
+        viewModelScope.launch(Dispatchers.Default) { EffectEngine.probe() }
         viewModelScope.launch {
             while (true) {
                 player.tick()
@@ -106,7 +111,7 @@ class SoundViewModel(private val app: Application) : AndroidViewModel(app) {
     }
 
     fun applyPreset(name: String) {
-        val bands = Eq.PRESETS[name] ?: AppRepo.state.value.userPresets[name] ?: return
+        val bands = Eq.presetBands(name) ?: AppRepo.state.value.userPresets[name] ?: return
         edit { it.copy(bands = bands, eqPreset = name) }
     }
 

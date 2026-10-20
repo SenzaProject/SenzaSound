@@ -1,5 +1,5 @@
 // Senza Sound - inti DSP (tanpa ketergantungan Android, bisa diuji di host).
-// Stereo interleaved float. Rantai: EQ 10 band -> stereo widener -> kompresor -> loudness -> limiter.
+// Stereo interleaved float. Rantai: EQ 32 band -> bass harmonik -> stereo widener -> kompresor -> loudness -> limiter.
 #pragma once
 #include <atomic>
 #include <cmath>
@@ -8,12 +8,14 @@
 
 namespace senza {
 
-constexpr int kBands = 10;
-constexpr float kFreqs[kBands] = {31.f, 62.f, 125.f, 250.f, 500.f, 1000.f, 2000.f, 4000.f, 8000.f, 16000.f};
+constexpr int kBands = 32;           // 1/3 oktaf, 20 Hz - 20 kHz
+constexpr float kQ = 3.0f;
+inline float bandFreq(int i) { return 20.f * std::pow(1000.f, (float)i / (float)(kBands - 1)); }
 
 struct Params {
     bool enabled = true;
     float gainsDb[kBands] = {0};   // gain EQ efektif per band (dB)
+    float virtualBass = 0.f;       // 0..1 harmonik bass (terdengar di speaker kecil)
     float spatial = 0.f;           // 0..1 lebar stereo
     float leveler = 0.f;           // 0..1 kekuatan kompresor
     float loudnessDb = 0.f;        // 0..8 dB
@@ -37,6 +39,24 @@ struct Biquad {
         b2 = (1.f - alpha * A) / a0;
         a1 = (-2.f * cw) / a0;
         a2 = (1.f - alpha / A) / a0;
+        active = true;
+    }
+    void setLowpass(float fs, float f0, float q) {
+        const float w0 = 2.f * 3.14159265f * f0 / fs;
+        const float alpha = std::sin(w0) / (2.f * q);
+        const float cw = std::cos(w0);
+        const float a0 = 1.f + alpha;
+        b0 = (1.f - cw) * 0.5f / a0; b1 = (1.f - cw) / a0; b2 = b0;
+        a1 = -2.f * cw / a0; a2 = (1.f - alpha) / a0;
+        active = true;
+    }
+    void setHighpass(float fs, float f0, float q) {
+        const float w0 = 2.f * 3.14159265f * f0 / fs;
+        const float alpha = std::sin(w0) / (2.f * q);
+        const float cw = std::cos(w0);
+        const float a0 = 1.f + alpha;
+        b0 = (1.f + cw) * 0.5f / a0; b1 = -(1.f + cw) / a0; b2 = b0;
+        a1 = -2.f * cw / a0; a2 = (1.f - alpha) / a0;
         active = true;
     }
     inline float run(int ch, float x) {
@@ -67,6 +87,7 @@ public:
 
     void reset() {
         for (auto& b : eq_) b.reset();
+        vbLp_.reset(); vbHp_.reset();
         env_ = 0.f; compGain_ = 1.f; limGain_ = 1.f;
     }
 
@@ -78,6 +99,7 @@ public:
             return;
         }
         const float widen = 1.f + cur_.spatial * 0.9f;
+        const float vb = cur_.virtualBass * 0.45f;
         const float loud = std::pow(10.f, cur_.loudnessDb / 20.f);
         const float limThr = std::pow(10.f, cur_.limiterDb / 20.f);
         // kompresor
@@ -93,6 +115,12 @@ public:
             float l = in[2 * i], r = in[2 * i + 1];
             for (int b = 0; b < kBands; ++b) {
                 if (eq_[b].active) { l = eq_[b].run(0, l); r = eq_[b].run(1, r); }
+            }
+            if (vb > 0.01f) {
+                // Bass harmonik: ambil bass <120 Hz, jenuhkan -> harmonik 150-400 Hz yang bisa dibunyikan speaker kecil.
+                const float low = vbLp_.run(0, 0.5f * (l + r));
+                const float harm = vbHp_.run(0, std::tanh(4.f * low)) * vb;
+                l += harm; r += harm;
             }
             if (cur_.spatial > 0.01f) {
                 const float m = 0.5f * (l + r);
@@ -127,12 +155,15 @@ private:
         cur_ = pending_;
         lock_.clear(std::memory_order_release);
         dirty_.store(false);
-        for (int b = 0; b < kBands; ++b) eq_[b].setPeaking(fs_, kFreqs[b], cur_.gainsDb[b], 1.2f);
+        vbLp_.setLowpass(fs_, 120.f, 0.707f);
+        vbHp_.setHighpass(fs_, 140.f, 0.707f);
+        for (int b = 0; b < kBands; ++b) eq_[b].setPeaking(fs_, bandFreq(b), cur_.gainsDb[b], kQ);
     }
 
     float fs_ = 48000.f;
     Params cur_, pending_;
     Biquad eq_[kBands];
+    Biquad vbLp_, vbHp_;
     float env_ = 0.f, compGain_ = 1.f, limGain_ = 1.f;
     std::atomic<bool> dirty_{true};
     std::atomic_flag lock_ = ATOMIC_FLAG_INIT;

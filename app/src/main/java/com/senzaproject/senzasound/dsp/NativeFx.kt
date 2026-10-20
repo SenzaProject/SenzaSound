@@ -25,6 +25,7 @@ class NativeFx private constructor(
         private const val K_LEVELER = 4
         private const val K_LOUDNESS = 5
         private const val K_LIMITER = 6
+        private const val K_VBASS = 7
 
         fun create(session: Int): NativeFx? = try {
             val ctor = AudioEffect::class.java.getDeclaredConstructor(
@@ -59,12 +60,14 @@ class NativeFx private constructor(
         leveler: Float,
         loudnessDb: Float,
         limiterDb: Float,
+        virtualBass: Float,
     ) {
         send(K_EQ, floats(gainsDb))
         send(K_SPATIAL, floats(floatArrayOf(spatial)))
         send(K_LEVELER, floats(floatArrayOf(leveler)))
         send(K_LOUDNESS, floats(floatArrayOf(loudnessDb)))
         send(K_LIMITER, floats(floatArrayOf(limiterDb)))
+        send(K_VBASS, floats(floatArrayOf(virtualBass)))
         send(K_ENABLE, ByteBuffer.allocate(4).order(ByteOrder.nativeOrder()).putInt(if (on) 1 else 0).array())
         fx.setEnabled(true)
     }

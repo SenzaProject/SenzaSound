@@ -32,10 +32,15 @@ object AppRepo {
 }
 
 private object Codec {
+    /** Membaca daftar gain; data lama 10 band otomatis diperluas ke 32 band. */
     private fun floats(a: JSONArray?): List<Float> {
-        val out = MutableList(Eq.BANDS) { 0f }
-        if (a != null) for (i in 0 until minOf(a.length(), Eq.BANDS)) out[i] = a.optDouble(i, 0.0).toFloat()
-        return out
+        if (a == null) return List(Eq.BANDS) { 0f }
+        val values = List(a.length()) { a.optDouble(it, 0.0).toFloat() }
+        return when (values.size) {
+            Eq.BANDS -> values
+            10 -> Eq.expand(values)
+            else -> List(Eq.BANDS) { 0f }
+        }
     }
 
     private fun settingsToJson(s: SoundSettings) = JSONObject().apply {

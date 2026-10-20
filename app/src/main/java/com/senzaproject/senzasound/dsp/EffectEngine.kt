@@ -1,5 +1,8 @@
 package com.senzaproject.senzasound.dsp
 
+import android.media.AudioAttributes
+import android.media.AudioFormat
+import android.media.AudioTrack
 import android.media.audiofx.BassBoost
 import android.media.audiofx.DynamicsProcessing
 import android.media.audiofx.Equalizer
@@ -15,24 +18,34 @@ import kotlin.math.max
 
 /**
  * Mesin efek Senza Sound. Memasang rantai efek pada sesi audio:
- * sesi 0 (global, jika ROM mengizinkan) dan sesi yang diumumkan pemutar lain / pemutar internal.
+ * sesi 0 (global, jika perangkat mengizinkan) dan sesi yang diumumkan pemutar lain / pemutar internal.
  */
 object EffectEngine {
+    /** Status sesi yang sedang terpasang. */
     data class Status(
         val sessions: List<Int> = emptyList(),
+        val globalAttached: Boolean = false,
+        val errors: List<String> = emptyList(),
+    )
+
+    /** Kemampuan perangkat, diuji pada sesi uji sementara. */
+    data class Caps(
+        val probed: Boolean = false,
         val native: Boolean = false,
         val dynamics: Boolean = false,
         val legacyEq: Boolean = false,
         val bass: Boolean = false,
         val virtualizer: Boolean = false,
         val loudness: Boolean = false,
-        val errors: List<String> = emptyList(),
     )
 
     private val _status = MutableStateFlow(Status())
     val status: StateFlow<Status> = _status
+    private val _caps = MutableStateFlow(Caps())
+    val caps: StateFlow<Caps> = _caps
 
     private val sessions = LinkedHashMap<Int, SessionFx>()
+    private val notes = mutableListOf<String>()
     private var last = AppState()
     private var endpoint = Endpoint.SPEAKER
 
@@ -77,17 +90,66 @@ object EffectEngine {
         publish()
     }
 
+    /** Catatan galat dari komponen lain (mis. layanan latar). */
+    @Synchronized
+    fun report(message: String) {
+        if (!notes.contains(message)) notes += message
+        publish()
+    }
+
+    /** Menguji kemampuan perangkat memakai sesi audio sementara. Aman dipanggil dari thread latar. */
+    fun probe() {
+        var track: AudioTrack? = null
+        try {
+            val min = AudioTrack.getMinBufferSize(44100, AudioFormat.CHANNEL_OUT_STEREO, AudioFormat.ENCODING_PCM_16BIT)
+            track = AudioTrack.Builder()
+                .setAudioAttributes(
+                    AudioAttributes.Builder()
+                        .setUsage(AudioAttributes.USAGE_MEDIA)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+                        .build(),
+                )
+                .setAudioFormat(
+                    AudioFormat.Builder()
+                        .setSampleRate(44100)
+                        .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
+                        .setChannelMask(AudioFormat.CHANNEL_OUT_STEREO)
+                        .build(),
+                )
+                .setBufferSizeInBytes(max(min, 4096))
+                .setTransferMode(AudioTrack.MODE_STREAM)
+                .build()
+            val sid = track.audioSessionId
+            val fx = SessionFx(sid)
+            var legacy = false
+            try {
+                val e = Equalizer(0, sid)
+                legacy = true
+                e.release()
+            } catch (t: Throwable) { }
+            _caps.value = Caps(
+                probed = true,
+                native = fx.hasNative,
+                dynamics = fx.hasDynamics,
+                legacyEq = legacy || fx.hasLegacyEq,
+                bass = fx.hasBass,
+                virtualizer = fx.hasVirtualizer,
+                loudness = fx.hasLoudness,
+            )
+            fx.release()
+        } catch (t: Throwable) {
+            _caps.value = Caps(probed = true)
+        } finally {
+            try { track?.release() } catch (t: Throwable) { }
+        }
+    }
+
     private fun publish() {
         val list = sessions.values.toList()
         _status.value = Status(
             sessions = sessions.keys.toList(),
-            native = list.any { it.hasNative },
-            dynamics = list.any { it.hasDynamics },
-            legacyEq = list.any { it.hasLegacyEq },
-            bass = list.any { it.hasBass },
-            virtualizer = list.any { it.hasVirtualizer },
-            loudness = list.any { it.hasLoudness },
-            errors = list.flatMap { f -> f.errors.map { "Sesi ${f.session}: $it" } }.distinct().take(8),
+            globalAttached = sessions.containsKey(0),
+            errors = (notes + list.flatMap { f -> f.errors.map { "Sesi ${f.session}: $it" } }).distinct().take(8),
         )
     }
 }
@@ -118,26 +180,26 @@ private class SessionFx(val session: Int) {
         try {
             dp = buildDynamics()
         } catch (t: Throwable) {
-            errors += "DynamicsProcessing tidak tersedia (${t.javaClass.simpleName})"
+            errors += "Prosesor dinamika tidak tersedia (${t.javaClass.simpleName})"
         }
         if (dp == null) {
             try {
                 eq = Equalizer(0, session)
             } catch (t: Throwable) {
-                errors += "Equalizer tidak tersedia (${t.javaClass.simpleName})"
+                errors += "EQ cadangan tidak tersedia (${t.javaClass.simpleName})"
             }
         }
-        try { bass = BassBoost(0, session) } catch (t: Throwable) { errors += "BassBoost tidak tersedia" }
-        try { virt = Virtualizer(0, session) } catch (t: Throwable) { errors += "Virtualizer tidak tersedia" }
-        try { loud = LoudnessEnhancer(session) } catch (t: Throwable) { errors += "LoudnessEnhancer tidak tersedia" }
+        try { bass = BassBoost(0, session) } catch (t: Throwable) { errors += "Penguat bass tidak tersedia" }
+        try { virt = Virtualizer(0, session) } catch (t: Throwable) { errors += "Virtualisasi spasial tidak tersedia" }
+        try { loud = LoudnessEnhancer(session) } catch (t: Throwable) { errors += "Penguat kenyaringan tidak tersedia" }
     }
 
     private fun buildDynamics(): DynamicsProcessing {
         val cfg = DynamicsProcessing.Config.Builder(
             DynamicsProcessing.VARIANT_FAVOR_FREQUENCY_RESOLUTION,
             2,
-            true, Eq.BANDS,   // pre-EQ
-            true, 3,          // multiband compressor (volume leveler)
+            true, Eq.BANDS,   // pre-EQ 32 band
+            true, 3,          // kompresor multiband (volume leveler)
             false, 0,         // post-EQ
             true,             // limiter
         ).build()
@@ -147,29 +209,31 @@ private class SessionFx(val session: Int) {
     fun apply(app: AppState, endpoint: Endpoint) {
         val on = app.enabled
         val s = app.current
-        val gains = EqMath.effectiveGains(s)
+        val gains = EqMath.effectiveGains(s, endpoint)
 
         nat?.let { n ->
             try {
-                n.apply(on, gains, s.spatial, s.leveler, s.loudness * 8f, if (s.safeVolume) -12f else -1f)
+                n.apply(on, gains, s.spatial, s.leveler, s.loudness * 8f, if (s.safeVolume) -12f else -1f, s.bass)
             } catch (t: Throwable) {
                 errors += "Gagal menerapkan efek native: ${t.message}"
             }
             return
         }
 
+        // Headroom: redam sedikit sebelum EQ agar tidak clipping, lalu kembalikan lewat penguat kenyaringan.
+        val maxBoost = max(0f, gains.maxOrNull() ?: 0f)
+        val atten = (maxBoost * 0.3f).coerceAtMost(4f)
+
         dp?.let { d ->
             try {
                 for (i in 0 until Eq.BANDS) {
                     d.setPreEqBandAllChannelsTo(i, DynamicsProcessing.EqBand(true, Eq.EDGES[i], gains[i]))
                 }
-                // Headroom agar boost EQ tidak membuat distorsi.
-                val maxBoost = gains.maxOrNull() ?: 0f
-                d.setInputGainAllChannelsTo(-(max(0f, maxBoost) * 0.5f).coerceAtMost(6f))
+                d.setInputGainAllChannelsTo(-atten)
 
-                // Volume leveler = kompresor 3 band.
+                // Volume leveler = kompresor 3 band (bass / vokal / treble).
                 val l = s.leveler
-                val cross = floatArrayOf(300f, 3000f, 20000f)
+                val cross = floatArrayOf(160f, 3500f, 20000f)
                 val thr = -12f - 18f * l
                 val ratio = 1.5f + 2.5f * l
                 val makeup = -thr * (1f - 1f / ratio) * 0.6f
@@ -180,7 +244,7 @@ private class SessionFx(val session: Int) {
                     d.setMbcBandAllChannelsTo(i, band)
                 }
                 // Limiter; "volume aman" menurunkan ambang batas.
-                val limThr = if (s.safeVolume) -12f else -1f
+                val limThr = if (s.safeVolume) -12f else -0.5f
                 val limiter = DynamicsProcessing.Limiter(true, true, 0, 1f, 60f, 10f, limThr, 0f)
                 d.setLimiterAllChannelsTo(limiter)
                 d.setEnabled(on)
@@ -206,7 +270,7 @@ private class SessionFx(val session: Int) {
 
         bass?.let { b ->
             try {
-                if (b.strengthSupported) b.setStrength((s.bass * 700f).toInt().toShort())
+                if (b.strengthSupported) b.setStrength((s.bass * 1000f).toInt().toShort())
                 b.setEnabled(on && s.bass > 0.02f)
             } catch (t: Throwable) { }
         }
@@ -223,8 +287,10 @@ private class SessionFx(val session: Int) {
 
         loud?.let { l ->
             try {
-                l.setTargetGain((s.loudness * 800f).toInt())
-                l.setEnabled(on && s.loudness > 0.02f)
+                // gain = kenyaringan pengguna + pengganti headroom yang diredam di atas
+                val mb = (s.loudness * 800f + atten * 100f * 0.9f).toInt()
+                l.setTargetGain(mb)
+                l.setEnabled(on && mb > 20)
             } catch (t: Throwable) { }
         }
     }

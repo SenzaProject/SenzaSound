@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
@@ -37,7 +38,8 @@ fun EqScreen(vm: SoundViewModel, padding: PaddingValues) {
     val s = app.current
     var showSave by remember { mutableStateOf(false) }
     var newName by remember { mutableStateOf("") }
-    val effective = EqMath.effectiveGains(s)
+    val endpoint by vm.endpoint.collectAsStateWithLifecycle()
+    val effective = EqMath.effectiveGains(s, endpoint)
 
     Column(
         Modifier
@@ -49,7 +51,7 @@ fun EqScreen(vm: SoundViewModel, padding: PaddingValues) {
         Column(Modifier.padding(top = 8.dp)) {
             Text("Equalizer", style = MaterialTheme.typography.headlineMedium)
             Text(
-                "10 band · profil ${app.profile.label} · preset: ${s.eqPreset}",
+                "32 band · profil ${app.profile.label} · preset: ${s.eqPreset}",
                 style = MaterialTheme.typography.bodySmall, color = TextDim,
             )
         }
@@ -60,11 +62,17 @@ fun EqScreen(vm: SoundViewModel, padding: PaddingValues) {
         }
 
         GlassCard {
-            SectionTitle("Band", "Seret untuk mengatur · ketuk dua kali untuk reset ke 0 dB")
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            SectionTitle("Bass & vokal", "Atur cepat tenaga bass dan kejernihan suara")
+            FxSlider("Bass punch", "Tenaga & hentakan nada rendah", s.bass, vm::setBass, enabled = app.enabled)
+            FxSlider("Kejernihan vokal", "Perjelas suara penyanyi & percakapan", s.dialog, vm::setDialog, enabled = app.enabled)
+        }
+
+        GlassCard {
+            SectionTitle("32 band", "Geser kiri-kanan · seret untuk atur · ketuk dua kali untuk reset ke 0 dB")
+            Row(Modifier.horizontalScroll(rememberScrollState())) {
                 for (i in 0 until Eq.BANDS) {
                     val v = if (i < s.bands.size) s.bands[i] else 0f
-                    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.weight(1f)) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.width(46.dp)) {
                         Text(
                             (if (v > 0) "+" else "") + (if (v == v.roundToInt().toFloat()) "${v.roundToInt()}" else "%.1f".format(v)),
                             style = MaterialTheme.typography.labelSmall,

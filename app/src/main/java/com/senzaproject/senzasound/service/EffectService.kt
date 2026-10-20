@@ -63,6 +63,7 @@ class EffectService : Service() {
         try {
             ServiceCompat.startForeground(this, NOTIF_ID, buildNotification(), type)
         } catch (t: Throwable) {
+            EffectEngine.report("Layanan latar gagal dimulai (${t.javaClass.simpleName})")
             stopSelf()
             return START_NOT_STICKY
         }

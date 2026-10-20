@@ -1,6 +1,12 @@
 package com.senzaproject.senzasound.ui
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.res.painterResource
+import com.senzaproject.senzasound.R
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -79,7 +85,12 @@ fun HomeScreen(vm: SoundViewModel, padding: PaddingValues) {
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
+            Image(
+                painter = painterResource(R.drawable.logo_senza),
+                contentDescription = "Logo Senza Sound",
+                modifier = Modifier.size(48.dp).clip(RoundedCornerShape(12.dp)),
+            )
+            Column(Modifier.weight(1f).padding(start = 12.dp)) {
                 Text("Senza Sound", style = MaterialTheme.typography.headlineMedium)
                 Text("Audio spasial & equalizer profesional", style = MaterialTheme.typography.bodySmall, color = TextDim)
             }
@@ -126,8 +137,8 @@ fun HomeScreen(vm: SoundViewModel, padding: PaddingValues) {
         GlassCard {
             SectionTitle("Suara spasial", "Virtualizer 3D untuk ${endpoint.label.lowercase()}")
             FxSlider("Surround virtualizer", "Lebarkan panggung suara", s.spatial, vm::setSpatial, enabled = app.enabled)
-            FxSlider("Penguat dialog", "Perjelas suara vokal & percakapan", s.dialog, vm::setDialog, enabled = app.enabled)
-            FxSlider("Bass enhancer", "Tambah bobot nada rendah", s.bass, vm::setBass, enabled = app.enabled)
+            FxSlider("Kejernihan vokal", "Perjelas suara vokal & percakapan", s.dialog, vm::setDialog, enabled = app.enabled)
+            FxSlider("Bass punch", "Tambah bobot & hentakan nada rendah", s.bass, vm::setBass, enabled = app.enabled)
         }
 
         GlassCard {

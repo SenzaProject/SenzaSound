@@ -3,11 +3,12 @@
 //
 // Protokol parameter (param = int32 key, value = data):
 //   1 ENABLE   int32 0/1
-//   2 EQ       float[10]  gain dB per band
+//   2 EQ       float[32]  gain dB per band (20 Hz - 20 kHz, 1/3 oktaf)
 //   3 SPATIAL  float 0..1
 //   4 LEVELER  float 0..1
 //   5 LOUDNESS float dB (0..8)
 //   6 LIMITER  float dB (ambang)
+//   7 VBASS    float 0..1 (bass harmonik)
 #include <errno.h>
 #include <stdint.h>
 #include <string.h>
@@ -36,7 +37,7 @@ const effect_descriptor_t kDescriptor = {
     "SenzaProject",
 };
 
-enum Key : int32_t { kEnable = 1, kEq = 2, kSpatial = 3, kLeveler = 4, kLoudness = 5, kLimiter = 6 };
+enum Key : int32_t { kEnable = 1, kEq = 2, kSpatial = 3, kLeveler = 4, kLoudness = 5, kLimiter = 6, kVBass = 7 };
 
 struct Context {
     const struct effect_interface_s* itfe;
@@ -86,12 +87,13 @@ int32_t doSetParam(Context* c, effect_param_t* p) {
                 c->params.gainsDb[i] = g < -15.f ? -15.f : (g > 15.f ? 15.f : g);
             }
             break;
-        case kSpatial: case kLeveler: case kLoudness: case kLimiter: {
+        case kSpatial: case kLeveler: case kLoudness: case kLimiter: case kVBass: {
             if (p->vsize < sizeof(float)) return -EINVAL;
             float f;
             memcpy(&f, v, sizeof(float));
             if (key == kSpatial) c->params.spatial = f < 0.f ? 0.f : (f > 1.f ? 1.f : f);
             else if (key == kLeveler) c->params.leveler = f < 0.f ? 0.f : (f > 1.f ? 1.f : f);
+            else if (key == kVBass) c->params.virtualBass = f < 0.f ? 0.f : (f > 1.f ? 1.f : f);
             else if (key == kLoudness) c->params.loudnessDb = f < 0.f ? 0.f : (f > 8.f ? 8.f : f);
             else c->params.limiterDb = f < -24.f ? -24.f : (f > 0.f ? 0.f : f);
             break;
